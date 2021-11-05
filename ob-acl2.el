@@ -1,6 +1,6 @@
 (require 'ob)
-(require 's)
-
+(require 'comint)
+(require 'dash)
 (provide 'ob-acl2)
 
 ;; Set up variables for ACL2
@@ -25,57 +25,34 @@
 (defun org-babel-acl2-initiate-session (session)
   (unless (string= session "none")
     (let* ((buf-name (format "*acl2-session:%s*" session))
-	   (proc-name (org-babel-acl2--proc-name session))
-	   (buf (get-buffer-create buf-name)))
-      (unless (get-buffer-process buf)
-	(start-process-shell-command proc-name buf org-babel-acl2-command))
-      session)
-    ;; (save-window-excursion
-    ;;   (message "%s" "asdf")
-    ;;   )
-    ))
+	   (proc-name (org-babel-acl2--proc-name session)))
+      (make-comint-in-buffer proc-name buf-name org-babel-acl2-command)
+      (message "words: %s" (org-babel-acl2--send-string buf-name ":help"))
+      buf-name)))
 
 (defun org-babel-acl2--proc-name (session)
-  (format "acl2<%s>" session)
-  )
+  (format "acl2<%s>" session))
 
 (defun org-babel-acl2--send-string (session body)
-  (process-send-string (org-babel-acl2--proc-name session)
-		       body))
-
-(defvar org-babel-acl2-output "new test")
-(defvar org-babel-acl2-output-initialized 'nil)
-(defun org-babel-acl2-filter (proc string)
-  (message "%s" string)
-  (if (or org-babel-acl2-output-initialized (s-contains? "ACL2 !>" string))
-      (progn
-	(setq org-babel-acl2-output-initialized t)
-	(setq org-babel-acl2-output (cadr (s-split "ACL2 !>" string))))
-    (setq org-babel-acl2-output string)))
+  (org-babel-comint-in-buffer session
+    (let* ((string-buffer "")
+	   (comint-output-filter-functions
+	    (cons (lambda (text)
+		    (setq string-buffer
+				 (concat string-buffer text)))
+		  comint-output-filter-functions)))
+      (insert body)
+      (comint-send-input)
+      (while (not (string-match "ACL2 !>" string-buffer))
+	(accept-process-output (get-buffer-process (current-buffer))))
+      (--> (substring string-buffer 0 (match-beginning 0))
+	   (org-babel-chomp it)
+	   (org-babel-chomp it)
+	   (org-babel-chomp it)))))
 
 (defun org-babel-acl2-execute (session body)
-  (let* ((proc (get-process (org-babel-acl2--proc-name session))))
-    (set-process-filter proc 'org-babel-acl2-filter)
-    (org-babel-acl2--send-string session body)
-    org-babel-acl2-output))
+  (org-babel-acl2--send-string session body))
 
 ;;;###autoload
 (define-derived-mode acl2-mode lisp-mode "ACL2 Mode"
   "Major Mode for dealing with ACL2 files.")
-
-;; (save-window-excursion
-;;   (with-current-buffer (get-buffer-create "*acl2-session:test*")
-;;     ;; (erase-buffer)
-;;     ;; (insert "(+ 1 1)")
-;;     (process-send-string "acl2" "(+ 1 1)\n")
-;;     (goto-char (point-max))
-;;     )
-;;   )
-
-;; (start-process-shell-command "acl2" "*acl2-session:test*" "acl2")
-;; (process-send-eof "acl2")
-
-(kill-process "acl2<nat>")
-
-
-;; (org-babel-acl2-initiate-session "test")
