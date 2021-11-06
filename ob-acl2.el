@@ -64,14 +64,6 @@
 	     (org-babel-chomp it)
 	     (org-babel-chomp it))))))
 
-(org-babel-comint-in-buffer "*acl2-session:nat*"
-  (insert "(+ 1 2)")
-  (comint-send-input)
-  (message "waiting")
-  (accept-process-output (get-buffer-process (current-buffer)) 1)
-  (message "found")
-  )
-
 (defun org-babel-acl2-execute (session body)
   (let* ((output (org-babel-acl2--send-string session body))
 	 (redundant? (string-match-p ":REDUNDANT" output)))
