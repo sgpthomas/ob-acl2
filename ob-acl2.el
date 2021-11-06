@@ -26,18 +26,22 @@
   (unless (string= session "none")
     (let* ((buf-name (format "*acl2-session:%s*" session))
 	   (proc-name (org-babel-acl2--proc-name session)))
-      (make-comint-in-buffer proc-name buf-name org-babel-acl2-command)
-      (org-babel-acl2--send-string buf-name "")
+      (unless (org-babel-comint-buffer-livep buf-name)
+	(make-comint-in-buffer proc-name buf-name org-babel-acl2-command)
+	(org-babel-acl2--send-string buf-name "(+ 1 2)"))
       buf-name)))
+
 
 (defun org-babel-acl2--proc-name (session)
   (format "acl2<%s>" session))
 
-(defun org-babel-acl2--input-ended (s)
+(defun org-babel-acl2--input-ended (session s)
   (or (string-match "ACL2 !>" s)
-      (string-match "Process acl2<.*> finished" s)))
+      (string-match "Process acl2<.*> finished" s)
+      (not (org-babel-comint-buffer-livep session))))
 
 (defun org-babel-acl2--send-string (session body)
+  (message "sending: %s" body)
   (org-babel-comint-in-buffer session
     (let* ((string-buffer "")
 	   (comint-output-filter-functions
@@ -47,22 +51,33 @@
 		  comint-output-filter-functions)))
       (insert body)
       (comint-send-input)
-      (setq-local limit 10)
-      (while (or (not (org-babel-acl2--input-ended string-buffer))
-		 (zerop limit))
+      (setq-local limit 5)
+      (while (and (not (org-babel-acl2--input-ended session string-buffer))
+		  (not (zerop limit)))
 	(accept-process-output (get-buffer-process (current-buffer)) 1)
 	(setq-local limit (1- limit))
 	(message "limit: %s" limit))
-      (--> (substring string-buffer 0 (match-beginning 0))
-	   (org-babel-chomp it)
-	   (org-babel-chomp it)
-	   (org-babel-chomp it)))))
+      (if (or (null string-buffer) (string-blank-p string-buffer))
+	  ""
+	(--> (substring string-buffer 0 (match-beginning 0))
+	     (org-babel-chomp it)
+	     (org-babel-chomp it)
+	     (org-babel-chomp it))))))
+
+(org-babel-comint-in-buffer "*acl2-session:nat*"
+  (insert "(+ 1 2)")
+  (comint-send-input)
+  (message "waiting")
+  (accept-process-output (get-buffer-process (current-buffer)) 1)
+  (message "found")
+  )
 
 (defun org-babel-acl2-execute (session body)
   (let* ((output (org-babel-acl2--send-string session body))
 	 (redundant? (string-match-p ":REDUNDANT" output)))
     ;; only return output if the definition hasn't already been accepted
-    (when (not redundant?)
+    (if (not redundant?)
+	output
       output)))
 
 ;;;###autoload
